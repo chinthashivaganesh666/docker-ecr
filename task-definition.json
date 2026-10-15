@@ -1,83 +1,23 @@
 {
-  "taskDefinitionArn": "arn:aws:ecs:ap-southeast-2:423351912961:task-definition/trainbook-task:10",
-  "containerDefinitions": [
-    {
-      "name": "trainbook",
-      "image": "423351912961.dkr.ecr.ap-southeast-2.amazonaws.com/project:latest",
-      "cpu": 0,
-      "portMappings": [
-        {
-          "containerPort": 8080,
-          "hostPort": 8080,
-          "protocol": "tcp",
-          "name": "trainbook-8080-tcp"
-        }
-      ],
-      "essential": true,
-      "environment": [],
-      "mountPoints": [],
-      "volumesFrom": [],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/ecs/trainbook",
-          "awslogs-region": "ap-south-1",
-          "awslogs-stream-prefix": "ecs"
-        },
-        "secretOptions": []
-      },
-      "systemControls": []
-    }
-  ],
-  "family": "trainbook-task",
-  "taskRoleArn": "arn:aws:iam::423351912961:role/ecsTaskExecutionRole",
-  "executionRoleArn": "arn:aws:iam::423351912961:role/ecsTaskExecutionRole",
+  "family": "train-ticket-task",
   "networkMode": "awsvpc",
-  "revision": 10,
-  "volumes": [],
-  "status": "ACTIVE",
-  "requiresAttributes": [
-    {
-      "name": "com.amazonaws.ecs.capability.logging-driver.awslogs"
-    },
-    {
-      "name": "ecs.capability.execution-role-awslogs"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.ecr-auth"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.19"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.task-iam-role"
-    },
-    {
-      "name": "ecs.capability.execution-role-ecr-pull"
-    },
-    {
-      "name": "com.amazonaws.ecs.capability.docker-remote-api.1.18"
-    },
-    {
-      "name": "ecs.capability.task-eni"
-    }
-  ],
-  "placementConstraints": [],
-  "compatibilities": [
-    "EC2",
-    "MANAGED_INSTANCES",
-    "FARGATE"
-  ],
-  "runtimePlatform": {
-    "cpuArchitecture": "X86_64",
-    "operatingSystemFamily": "LINUX"
-  },
   "requiresCompatibilities": [
     "FARGATE"
   ],
   "cpu": "256",
   "memory": "512",
-  "registeredAt": "2026-10-15T11:25:51.910Z",
-  "registeredBy": "arn:aws:iam::423351912961:user/shiva",
-  "tags": []
+  "executionRoleArn": "arn:aws:iam::423351912961:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "train-ticket-container",
+      "image": "<IMAGE>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ]
+    }
+  ]
 }
