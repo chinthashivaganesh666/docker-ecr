@@ -1,83 +1,111 @@
-name: Train Ticket Reservation CI/CD
+name: Build and Deploy train-ticket-reservation
 
 on:
   push:
     branches:
-      - main
-
+      - master
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
 
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      ECR_REPOSITORY: project
-      ECS_CLUSTER: trainbook-cluster
-      ECS_SERVICE: trainbook-service
-      ECS_TASK_DEFINITION: task-definition.json
-      CONTAINER_NAME: trainbook
-
     steps:
-      - name: Checkout Source
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
           cache: maven
 
-      - name: Build WAR
+      - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: Verify WAR File
+      - name: Find WAR file
         run: |
-          ls -lh target/
-          test -f target/TrainBook-1.0.0-SNAPSHOT.war
+          WAR_FILE=$(find target -maxdepth 1 -type f -name '*.war' -print -quit)
+          if [ -z "$WAR_FILE" ]; then
+            echo "No WAR file found in target/"
+            exit 1
+          fi
+          echo "WAR_FILE=$WAR_FILE" >> "$GITHUB_ENV"
 
-      - name: Configure AWS Credentials
+      - name: Upload WAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: war-file
+          path: ${{ env.WAR_FILE }}
+
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Docker Image
-        id: build-image
+      - name: Trivy FS Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '0'
+
+      - name: Build Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
             .
 
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Render ECS Task Definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
         with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }}
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
+          scan-type: image
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: '0'
+
+      - name: Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Update ECS Task Definition
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed "s|<IMAGE>|$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" \
+            task-definition.json > new-task.json
+
+          cat new-task.json
 
       - name: Deploy to Amazon ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          service: ${{ env.ECS_SERVICE }}
+          task-definition: new-task.json
+          service: ${{ secrets.ECS_SERVICE }}
+          cluster: ${{ secrets.ECS_CLUSTER }}
           wait-for-service-stability: true
