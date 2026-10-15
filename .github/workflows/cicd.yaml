@@ -1,61 +1,83 @@
-name: ci/cd pipeline to deploy to tomcat
+name: Train Ticket Reservation CI/CD
+
 on:
-   push:
-      branches: master
-      
-   workflow_dispatch:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-   build-deploy:
-     runs-on: ubuntu-latest
-     steps: 
-        - name: checkout code
-          uses: actions/checkout@v3
-        - name: set-up jdk
-          uses: actions/setup-java@v3
-          with:
-            distribution: temurin
-            java-version: '17'
-            cache: maven
-            
-        - name: validate with maven
-          run: mvn validate
-        - name: compile with maven
-          run: mvn compile
-        - name: test with maven
-          run: mvn test
-        - name: package with maven
-          run: mvn package
-        - name: verify war file
-          run: ls -lh target/
-          # deploy to tomcat
-        - name: setup java 8 again
-          uses: actions/setup-java@v4
-          with:
-           distribution: temurin
-           java-version: '8'
-        - name: configure maven settings.xml
-          run: |
-            mkdir -p ~/.m2
-            cat > ~/.m2/settings.xml <<EOF
-            <settings>
-             <servers>
-              <server>
-                <id>nexus</id>
-                <username>${{ secrets.NEXUS_USERNAME }}</username>
-                <password>${{ secrets.NEXUS_PASSWORD }}</password>
-              </server>
-             </servers>
-            </settings>
-            EOF
-        - name: deploy artifact to nexus
-          run: |
-            mvn deploy \
-              -DskipTests \
-              -DaltDeploymentRepository=nexus::default::${{ secrets.NEXUS_REPO_URL }}
+  build-deploy:
+    runs-on: ubuntu-latest
 
-        
-          
-            
-            
-         
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REPOSITORY: rahul
+      ECS_CLUSTER: trainbook-cluster
+      ECS_SERVICE: trainbook-service
+      ECS_TASK_DEFINITION: task-definition.json
+      CONTAINER_NAME: trainbook
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build WAR
+        run: mvn clean package -DskipTests
+
+      - name: Verify WAR File
+        run: |
+          ls -lh target/
+          test -f target/TrainBook-1.0.0-SNAPSHOT.war
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            .
+
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Render ECS Task Definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
