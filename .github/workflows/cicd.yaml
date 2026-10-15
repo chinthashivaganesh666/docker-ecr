@@ -16,7 +16,7 @@ jobs:
 
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
-      ECR_REPOSITORY: rahul
+      ECR_REPOSITORY: project
       ECS_CLUSTER: trainbook-cluster
       ECS_SERVICE: trainbook-service
       ECS_TASK_DEFINITION: task-definition.json
