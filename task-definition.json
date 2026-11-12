@@ -1,0 +1,23 @@
+{
+  "family": "train-ticket-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::423351912961:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "train-ticket-container",
+      "image": "<IMAGE>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ]
+    }
+  ]
+}
